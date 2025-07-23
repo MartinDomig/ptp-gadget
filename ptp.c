@@ -2094,12 +2094,13 @@ static void *inotify_thread(void *param) {
 				}
 
 				sem_wait(&dbaccess);
-				if (event->mask & IN_CLOSE_WRITE) {
+				if (event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO)) {
 					struct obj_list *obj = NULL;
 					GSList *iterator;
 
 					if (verbose)
-						fprintf(stderr, "inotify: file %s closed\n", event->name);
+						fprintf(stderr, "inotify: file %s %s\n", event->name, 
+							(event->mask & IN_CLOSE_WRITE) ? "closed" : "moved to directory");
 
 					/* test if file is already in database */
 					GFOREACH(obj, images) {
@@ -2109,7 +2110,8 @@ static void *inotify_thread(void *param) {
 
 					if (obj) {
 						if (verbose)
-							fprintf(stderr, "inotify: closed file %s already in database, delete it first\n", event->name);
+							fprintf(stderr, "inotify: %s file %s already in database, delete it first\n",
+								(event->mask & IN_CLOSE_WRITE) ? "closed" : "moved", event->name);
 						delete_thumb(obj);
 						images = g_slist_remove(images, obj);
 						update_free_space();
@@ -2125,12 +2127,13 @@ static void *inotify_thread(void *param) {
 						send_event(PIMA15740_EVENT_OBJECT_ADDED, last_object_number);
 					}
 
-				} else if (event->mask & IN_DELETE) {
+				} else if (event->mask & (IN_MOVED_FROM | IN_DELETE)) {
 					struct obj_list *obj = NULL;
 					GSList *iterator;
 
 					if (verbose)
-						fprintf(stderr, "inotify: file %s deleted\n", event->name);
+						fprintf(stderr, "inotify: file %s %s\n", event->name, 
+							(event->mask & IN_MOVED_FROM) ? "moved from directory" : "deleted");
 
 					GFOREACH(obj, images) {
 						if (strcmp(obj->name, event->name) == 0)
@@ -2885,7 +2888,7 @@ int main(int argc, char *argv[])
 	if ((notify_fd = inotify_init()) < 0)
 		perror("inotify init failed");
 
-	if ((notify_wd = inotify_add_watch(notify_fd, root, IN_CLOSE_WRITE | IN_DELETE)) < 0)
+	if ((notify_wd = inotify_add_watch(notify_fd, root, IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE | IN_MOVED_FROM)) < 0)
 		perror("inotify add watch failed");
 
 	ret = pthread_create(&inotify_pthread, NULL, inotify_thread, NULL);
